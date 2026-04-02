@@ -3,9 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/check-runtime.js",
     "dev": "NEXT_DIST_DIR=.next-dev next dev",
-    "prebuild": "rm -rf .next .next-build .next-dev",
+    "prebuild": "node scripts/check-runtime.js && rm -rf .next .next-build .next-dev",
     "build": "NEXT_DIST_DIR=.next-build next build",
+    "prestart": "node scripts/check-runtime.js",
     "start": "NEXT_DIST_DIR=.next-build next start -p ${PORT:-3000}",
     "lint": "next lint",
     "test": "jest --passWithNoTests",
