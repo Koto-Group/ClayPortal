@@ -1,0 +1,22 @@
+# Files and directories excluded from App Engine deployments
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+node_modules/
+coverage/
+.next/
+.next-build/
+.next-dev/
+out/
+dist/
+build/
+**/__tests__/**
+**/*.test.*
+**/*.spec.*
+*.md
+.env
+.env.*
+Geo-Robotics-main/

@@ -1,0 +1,204 @@
+steps:
+  - name: "node:22"
+    entrypoint: npm
+    args: ["install"]
+
+  - name: "node:22"
+    entrypoint: npm
+    args: ["run", "test"]
+
+  - name: "node:22"
+    entrypoint: npm
+    args: ["run", "build"]
+
+  - id: "prune workspace before deploy"
+    name: "gcr.io/cloud-builders/gcloud"
+    entrypoint: bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+        rm -rf node_modules .next .next-build .next-dev coverage
+
+  - name: "gcr.io/cloud-builders/gcloud"
+    entrypoint: bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+
+        find_operation_id() {
+          local version="$1"
+          local operation_id=""
+
+          for lookup_attempt in $(seq 1 24); do
+            operation_id="$(
+              gcloud app operations list --limit=20 --sort-by=~startTime --format=json | python3 -c 'import json, sys; version = sys.argv[1]; items = json.load(sys.stdin); print(next((item["id"] for item in items if item.get("op_resource", {}).get("metadata", {}).get("target", "").endswith(f"/versions/{version}")), ""))' "${version}"
+            )"
+
+            if [ -n "${operation_id}" ]; then
+              printf '%s\n' "${operation_id}"
+              return 0
+            fi
+
+            echo "Waiting for App Engine operation for version ${version} to appear (${lookup_attempt}/24)..."
+            sleep 5
+          done
+
+          return 1
+        }
+
+        wait_for_full_traffic() {
+          local version="$1"
+
+          for promotion_check in $(seq 1 60); do
+            if gcloud app services describe default --format=json | python3 -c 'import json, sys; version = sys.argv[1]; service = json.load(sys.stdin); traffic = float(service.get("split", {}).get("allocations", {}).get(version, 0)); sys.exit(0 if traffic == 1.0 else 1)' "${version}"; then
+              echo "Version ${version} is serving 100% of traffic."
+              return 0
+            fi
+
+            echo "Waiting for version ${version} to receive traffic (${promotion_check}/60)..."
+            sleep 10
+          done
+
+          echo "Version ${version} was created, but did not receive full traffic in time." >&2
+          gcloud app services describe default --format=json
+          return 1
+        }
+
+        ensure_version_has_traffic() {
+          local version="$1"
+
+          if gcloud app services describe default --format=json | python3 -c 'import json, sys; version = sys.argv[1]; service = json.load(sys.stdin); traffic = float(service.get("split", {}).get("allocations", {}).get(version, 0)); sys.exit(0 if traffic > 0 else 1)' "${version}"; then
+            echo "Version ${version} already has traffic assigned."
+            return 0
+          fi
+
+          echo "Promoting version ${version} to receive traffic."
+          gcloud app services set-traffic default --quiet --splits "${version}=1"
+        }
+
+        is_retryable_deploy_error() {
+          local file
+          for file in "$@"; do
+            if [ -f "${file}" ] && grep -Eq 'Error Response: \[(10|13)\] (Cloud build is not complete\.|An internal error occurred\.)|Timed out fetching pod\.' "${file}"; then
+              return 0
+            fi
+          done
+
+          return 1
+        }
+
+        operation_succeeded() {
+          local snapshot_file="$1"
+          python3 -c 'import json, sys; op = json.load(open(sys.argv[1])); sys.exit(0 if op.get("done") and not op.get("error") else 1)' "${snapshot_file}"
+        }
+
+        operation_done() {
+          local snapshot_file="$1"
+          python3 -c 'import json, sys; op = json.load(open(sys.argv[1])); sys.exit(0 if op.get("done") else 1)' "${snapshot_file}"
+        }
+
+        operation_retryable_failure() {
+          local snapshot_file="$1"
+          python3 -c 'import json, sys; op = json.load(open(sys.argv[1])); err = op.get("error", {}); code = err.get("code"); msg = err.get("message", ""); sys.exit(0 if code in {4, 10, 13} or msg in {"Timed out fetching pod.", "Cloud build is not complete.", "An internal error occurred."} else 1)' "${snapshot_file}"
+        }
+
+        wait_for_operation_completion() {
+          local operation_id="$1"
+          local snapshot_file="$2"
+          local wait_log="$3"
+          local max_checks="${4:-80}"
+
+          for wait_attempt in $(seq 1 "${max_checks}"); do
+            gcloud app operations describe "${operation_id}" --format=json | tee -a "${wait_log}" > "${snapshot_file}"
+
+            if operation_done "${snapshot_file}"; then
+              return 0
+            fi
+
+            echo "Operation ${operation_id} still pending (${wait_attempt}/${max_checks})."
+            sleep 15
+          done
+
+          echo "Operation ${operation_id} remained pending after $((max_checks * 15)) seconds." >&2
+          return 124
+        }
+
+        deploy_command_timed_out() {
+          local exit_code="$1"
+          [ "${exit_code}" -eq 124 ] || [ "${exit_code}" -eq 137 ]
+        }
+
+        for attempt in 1 2 3; do
+          deploy_version="$(date -u +%Y%m%dt%H%M%S)"
+          deploy_log="$(mktemp)"
+          wait_log="$(mktemp)"
+          operation_snapshot="$(mktemp)"
+          deploy_exit=0
+          wait_exit=0
+          operation_id=""
+
+          echo "Deploying App Engine version ${deploy_version} (attempt ${attempt}/3)"
+
+          set +e
+          timeout 600 \
+            gcloud app deploy \
+              --ignore-file=.appengineignore \
+              --quiet \
+              --verbosity=debug \
+              --version="${deploy_version}" 2>&1 | tee "${deploy_log}"
+          deploy_exit=${PIPESTATUS[0]}
+          set -e
+
+          if [ "${deploy_exit}" -eq 0 ]; then
+            rm -f "${deploy_log}" "${wait_log}" "${operation_snapshot}"
+            ensure_version_has_traffic "${deploy_version}"
+            if wait_for_full_traffic "${deploy_version}"; then
+              exit 0
+            fi
+            exit 1
+          fi
+
+          if operation_id="$(find_operation_id "${deploy_version}")"; then
+            echo "gcloud app deploy exited with ${deploy_exit}. Waiting on App Engine operation ${operation_id} for version ${deploy_version}."
+            if deploy_command_timed_out "${deploy_exit}"; then
+              echo "gcloud app deploy timed out locally; continuing to watch server-side operation ${operation_id}."
+            fi
+            set +e
+            wait_for_operation_completion "${operation_id}" "${operation_snapshot}" "${wait_log}"
+            wait_exit=$?
+            set -e
+
+            if [ "${wait_exit}" -eq 124 ]; then
+              echo "Treating stalled App Engine operation ${operation_id} as retryable."
+            fi
+
+            if operation_succeeded "${operation_snapshot}"; then
+              rm -f "${deploy_log}" "${wait_log}" "${operation_snapshot}"
+              ensure_version_has_traffic "${deploy_version}"
+              if wait_for_full_traffic "${deploy_version}"; then
+                exit 0
+              fi
+              exit 1
+            fi
+          else
+            echo "Could not find the App Engine CreateVersion operation for ${deploy_version}" >&2
+            gcloud app operations list --limit=10 --sort-by=~startTime --format=json
+          fi
+
+          if [ "${attempt}" -lt 3 ] && { deploy_command_timed_out "${deploy_exit}" || [ "${wait_exit}" -eq 124 ] || is_retryable_deploy_error "${deploy_log}" "${wait_log}" || operation_retryable_failure "${operation_snapshot}"; }; then
+            rm -f "${deploy_log}" "${wait_log}" "${operation_snapshot}"
+            echo "Transient App Engine deploy failure detected. Retrying attempt ${attempt}/3 after backoff."
+            sleep $((attempt * 60))
+            continue
+          fi
+
+          rm -f "${deploy_log}" "${wait_log}" "${operation_snapshot}"
+          exit 1
+        done
+
+options:
+  machineType: "E2_HIGHCPU_8"
+
+timeout: "4600s"
