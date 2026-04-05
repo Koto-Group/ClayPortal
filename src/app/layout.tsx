@@ -17,7 +17,7 @@ const displayFont = Space_Grotesk({
 
 export const metadata: Metadata = {
   title: "ClayPortal",
-  description: "Multi-tenant SaaS and AI delivery platform for company-specific dashboards."
+  description: "Custom AI solutions for companies, from internal systems to client-facing software."
 };
 
 export default function RootLayout({

@@ -1,30 +1,54 @@
 runtime: nodejs22
-instance_class: F2
+instance_class: F1
 
 automatic_scaling:
-  min_instances: 1
-  max_instances: 6
+  min_instances: 0
+  max_instances: 3
   target_cpu_utilization: 0.65
 
 env_variables:
   NODE_ENV: "production"
   APP_STATUS: "PROD"
+  APP_BASE_URL: "https://clayportal.uc.r.appspot.com"
+  NEXT_PUBLIC_APP_BASE_URL: "https://clayportal.uc.r.appspot.com"
+  NEXT_PUBLIC_ALLOWED_ORIGINS: "https://clayportal.uc.r.appspot.com"
+  NEXT_PUBLIC_FIREBASE_API_KEY: "AIzaSyAuIWM7FRr4OCIxPryfCqm51r12P8Qif2E"
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "clayportal.firebaseapp.com"
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: "clayportal"
+  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: "clayportal.appspot.com"
+  NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "714957560652"
+  NEXT_PUBLIC_FIREBASE_APP_ID: "1:714957560652:web:clayportal"
+  GOOGLE_CLOUD_PROJECT: "clayportal"
+  GCLOUD_PROJECT: "clayportal"
+  SECRET_MANAGER_PROJECT: "clayportal"
   DATABASE_APPLICATION_NAME: "clayportal-web"
   DATABASE_POOL_MAX: "5"
   DATABASE_POOL_HARD_CAP: "8"
   DATABASE_SLOW_QUERY_MS: "750"
+  DATABASE_SSL: "false"
 
 build_env_variables:
   GOOGLE_NODE_RUN_SCRIPTS: "build"
+  APP_BASE_URL: "https://clayportal.uc.r.appspot.com"
+  NEXT_PUBLIC_APP_BASE_URL: "https://clayportal.uc.r.appspot.com"
+  NEXT_PUBLIC_ALLOWED_ORIGINS: "https://clayportal.uc.r.appspot.com"
+  NEXT_PUBLIC_FIREBASE_API_KEY: "AIzaSyAuIWM7FRr4OCIxPryfCqm51r12P8Qif2E"
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "clayportal.firebaseapp.com"
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: "clayportal"
+  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: "clayportal.appspot.com"
+  NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "714957560652"
+  NEXT_PUBLIC_FIREBASE_APP_ID: "1:714957560652:web:clayportal"
+  GOOGLE_CLOUD_PROJECT: "clayportal"
+  GCLOUD_PROJECT: "clayportal"
+  SECRET_MANAGER_PROJECT: "clayportal"
 
 entrypoint: npm run start
+
+beta_settings:
+  cloud_sql_instances: "clayportal:us-central1:clayportal-db"
 
 handlers:
   - url: /.*
     secure: always
     redirect_http_response_code: 301
     script: auto
-
-# Uncomment and update this when you attach App Engine to a VPC connector.
-# vpc_access_connector:
-#   name: projects/your-project/locations/us-central1/connectors/your-connector

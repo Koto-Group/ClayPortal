@@ -9,6 +9,7 @@ describe("metricsCards", () => {
       invitedUsers: 7,
       activeUsers: 35,
       recentLogins: 11,
+      openAccessRequests: 5,
       usersPerCompany: []
     });
 
@@ -19,6 +20,11 @@ describe("metricsCards", () => {
         label: "Invites",
         value: "7",
         detail: "11 recent logins this week"
+      },
+      {
+        label: "Requests",
+        value: "5",
+        detail: "Registration requests awaiting review"
       }
     ]);
   });

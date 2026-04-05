@@ -1,13 +1,12 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { LoginForm } from "@/components/auth/login-form";
+import { RegisterForm } from "@/components/auth/register-form";
 import { WorkspaceAuthShell } from "@/components/auth/workspace-auth-shell";
 import { findCompanyBySlug } from "@/lib/db/repositories";
 import { getTenantRegistryEntry } from "@/lib/tenants/registry";
 
 export const dynamic = "force-dynamic";
 
-export default async function TenantLoginPage({
+export default async function TenantRegisterPage({
   params
 }: {
   params: Promise<{ companySlug: string }>;
@@ -26,26 +25,19 @@ export default async function TenantLoginPage({
 
   return (
     <WorkspaceAuthShell
-      activeRoute="login"
+      activeRoute="register"
       companyName={company.name}
       companySlug={company.slug}
-      content={registryEntry.login}
+      content={registryEntry.register}
       segment={registryEntry.segment}
       summary={registryEntry.summary}
     >
-      <div className="workspace-access-form-stack">
-        <LoginForm
-          companySlug={company.slug}
-          description={registryEntry.login.description}
-          title={registryEntry.login.title}
-          variant="tenant"
-        />
-        <p className="workspace-access-helper">
-          Need access first?
-          {" "}
-          <Link href={`/${company.slug}/register`}>Open registration</Link>
-        </p>
-      </div>
+      <RegisterForm
+        companyName={company.name}
+        companySlug={company.slug}
+        description={registryEntry.register.description}
+        title={registryEntry.register.title}
+      />
     </WorkspaceAuthShell>
   );
 }

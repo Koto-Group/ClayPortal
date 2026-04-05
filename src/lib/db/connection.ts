@@ -3,10 +3,14 @@ import { getEnvOrSecret } from "@/lib/utils/secrets";
 
 let connection: Knex | null = null;
 let pendingConnection: Promise<Knex> | null = null;
+let knexFactoryPromise: Promise<typeof import("knex").default> | null = null;
 
-const getKnexFactory = (): typeof import("knex").default => {
-  const runtimeRequire = new Function("moduleName", "return require(moduleName);");
-  return runtimeRequire("knex");
+const getKnexFactory = async (): Promise<typeof import("knex").default> => {
+  if (!knexFactoryPromise) {
+    knexFactoryPromise = import("knex").then((module) => module.default);
+  }
+
+  return knexFactoryPromise;
 };
 
 const getPoolMax = () =>
@@ -36,7 +40,9 @@ const buildConnection = async () => {
     );
   }
 
-  return getKnexFactory()({
+  const knex = await getKnexFactory();
+
+  return knex({
     client: "pg",
     pool: {
       min: 0,

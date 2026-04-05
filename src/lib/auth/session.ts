@@ -1,17 +1,27 @@
 import { jwtVerify, SignJWT } from "jose";
 import { NextResponse, type NextRequest } from "next/server";
 import type { SessionUser } from "@/lib/types";
+import { getEnvOrSecret } from "@/lib/utils/secrets";
 
 export const SESSION_COOKIE_NAME = "clayportal_session";
 
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 12;
 
-const getSessionSecret = () => {
-  const value = process.env.SESSION_SECRET;
+let cachedSessionSecret: Uint8Array | null = null;
+
+const getSessionSecret = async () => {
+  if (cachedSessionSecret) {
+    return cachedSessionSecret;
+  }
+
+  const value =
+    process.env.SESSION_SECRET || (await getEnvOrSecret("SESSION_SECRET"));
   if (!value) {
     throw new Error("SESSION_SECRET is required.");
   }
-  return new TextEncoder().encode(value);
+
+  cachedSessionSecret = new TextEncoder().encode(value);
+  return cachedSessionSecret;
 };
 
 export const createSessionToken = async (session: SessionUser) =>
@@ -19,7 +29,7 @@ export const createSessionToken = async (session: SessionUser) =>
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_MAX_AGE_SECONDS}s`)
-    .sign(getSessionSecret());
+    .sign(await getSessionSecret());
 
 export const verifySessionToken = async (token?: string | null) => {
   if (!token) {
@@ -27,7 +37,7 @@ export const verifySessionToken = async (token?: string | null) => {
   }
 
   try {
-    const verified = await jwtVerify(token, getSessionSecret());
+    const verified = await jwtVerify(token, await getSessionSecret());
     return verified.payload.user as SessionUser;
   } catch {
     return null;

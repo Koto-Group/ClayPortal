@@ -3,17 +3,28 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { metricsCards } from "@/lib/admin/metrics";
-import type { AdminMetrics, CompanySummary, SessionUser, UserSummary } from "@/lib/types";
+import type {
+  AccessRequestSummary,
+  AdminMetrics,
+  CompanySummary,
+  SessionUser,
+  TenantCatalogEntry,
+  UserSummary
+} from "@/lib/types";
 import { useAuthBridge } from "@/providers/auth-provider";
 
 type AdminWorkspaceProps = {
+  accessRequests: AccessRequestSummary[];
   metrics: AdminMetrics;
   companies: CompanySummary[];
+  dashboardTemplates: TenantCatalogEntry[];
   users: UserSummary[];
   session: SessionUser;
 };
 
 export function AdminWorkspace({
+  accessRequests,
+  dashboardTemplates,
   metrics,
   companies,
   users,
@@ -21,10 +32,11 @@ export function AdminWorkspace({
 }: AdminWorkspaceProps) {
   const router = useRouter();
   const { signInWithBridgeToken } = useAuthBridge();
+  const defaultDashboardKey = dashboardTemplates[0]?.key ?? "example-company";
   const [companyForm, setCompanyForm] = useState({
     name: "",
     slug: "",
-    dashboardKey: "example-company",
+    dashboardKey: defaultDashboardKey,
     status: "active"
   });
   const [inviteForm, setInviteForm] = useState({
@@ -37,7 +49,7 @@ export function AdminWorkspace({
   const [editingCompanyForm, setEditingCompanyForm] = useState({
     name: "",
     slug: "",
-    dashboardKey: "example-company",
+    dashboardKey: defaultDashboardKey,
     status: "active"
   });
   const [busyState, setBusyState] = useState<string | null>(null);
@@ -66,7 +78,7 @@ export function AdminWorkspace({
       setCompanyForm({
         name: "",
         slug: "",
-        dashboardKey: "example-company",
+        dashboardKey: defaultDashboardKey,
         status: "active"
       });
       router.refresh();
@@ -258,17 +270,21 @@ export function AdminWorkspace({
           </label>
           <label className="field">
             <span>Dashboard key</span>
-            <input
+            <select
               onChange={(event) =>
                 setCompanyForm((current) => ({
                   ...current,
                   dashboardKey: event.target.value
                 }))
               }
-              required
-              type="text"
               value={companyForm.dashboardKey}
-            />
+            >
+              {dashboardTemplates.map((template) => (
+                <option key={template.key} value={template.key}>
+                  {template.displayName} · {template.segment}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field">
             <span>Status</span>
@@ -401,17 +417,21 @@ export function AdminWorkspace({
           </label>
           <label className="field">
             <span>Dashboard key</span>
-            <input
+            <select
               onChange={(event) =>
                 setEditingCompanyForm((current) => ({
                   ...current,
                   dashboardKey: event.target.value
                 }))
               }
-              required
-              type="text"
               value={editingCompanyForm.dashboardKey}
-            />
+            >
+              {dashboardTemplates.map((template) => (
+                <option key={template.key} value={template.key}>
+                  {template.displayName} · {template.segment}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field">
             <span>Status</span>
@@ -470,6 +490,54 @@ export function AdminWorkspace({
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <span className="panel-label">Registration requests</span>
+            <h2>Client onboarding queue</h2>
+          </div>
+          <p>{accessRequests.length} request(s)</p>
+        </div>
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Company</th>
+                <th>Requested role</th>
+                <th>Use case</th>
+                <th>Status</th>
+                <th>Submitted</th>
+              </tr>
+            </thead>
+            <tbody>
+              {accessRequests.length ? (
+                accessRequests.map((request) => (
+                  <tr key={request.id}>
+                    <td>
+                      <strong>{request.full_name}</strong>
+                      <p>{request.email}</p>
+                    </td>
+                    <td>{request.company_name}</td>
+                    <td>{request.requested_role}</td>
+                    <td>
+                      <strong>{request.use_case}</strong>
+                      {request.team_name ? <p>Team: {request.team_name}</p> : null}
+                    </td>
+                    <td>{request.status}</td>
+                    <td>{new Date(request.created_at).toLocaleString()}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={6}>No registration requests yet.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

@@ -15,5 +15,10 @@ export const metricsCards = (metrics: AdminMetrics) => [
     label: "Invites",
     value: `${metrics.invitedUsers}`,
     detail: `${metrics.recentLogins} recent logins this week`
+  },
+  {
+    label: "Requests",
+    value: `${metrics.openAccessRequests}`,
+    detail: "Registration requests awaiting review"
   }
 ];

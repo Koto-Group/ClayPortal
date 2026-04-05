@@ -1,7 +1,12 @@
 const fs = require("fs");
 const path = require("path");
 const knex = require("knex");
-const { initializeApp, getApps, cert } = require("firebase-admin/app");
+const {
+  initializeApp,
+  getApps,
+  cert,
+  applicationDefault
+} = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const knexConfig = require("../knexfile");
 
@@ -25,20 +30,26 @@ if (fs.existsSync(envPath)) {
 
 const resolveServiceAccount = () => {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    return {
+      credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON))
+    };
   }
 
   if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
-    return JSON.parse(
-      Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, "base64").toString(
-        "utf8"
+    return {
+      credential: cert(
+        JSON.parse(
+          Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, "base64").toString(
+            "utf8"
+          )
+        )
       )
-    );
+    };
   }
 
-  throw new Error(
-    "Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT_BASE64 before bootstrapping the platform admin."
-  );
+  return {
+    credential: applicationDefault()
+  };
 };
 
 const bootstrap = async () => {
@@ -53,9 +64,7 @@ const bootstrap = async () => {
   }
 
   if (!getApps().length) {
-    initializeApp({
-      credential: cert(resolveServiceAccount())
-    });
+    initializeApp(resolveServiceAccount());
   }
 
   const auth = getAuth();

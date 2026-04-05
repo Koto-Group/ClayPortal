@@ -49,7 +49,12 @@ const expectedSwcPackageByPlatform = {
 
 const expectedSwcPackage = expectedSwcPackageByPlatform[platform]?.[arch];
 
-if (typeof process.getuid === "function" && process.getuid() === 0) {
+const isLikelySudoRun =
+  typeof process.getuid === "function" &&
+  process.getuid() === 0 &&
+  Boolean(process.env.SUDO_USER);
+
+if (isLikelySudoRun) {
   console.error("");
   console.error("ClayPortal should not be run with sudo.");
   console.error("Run npm scripts as your normal user so the Node architecture and installed Next SWC binary stay aligned.");

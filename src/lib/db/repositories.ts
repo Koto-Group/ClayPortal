@@ -2,12 +2,13 @@ import type { Knex } from "knex";
 import { getDb } from "@/lib/db/connection";
 import { hashInviteToken } from "@/lib/security/invite-tokens";
 import type {
+  AccessRequestSummary,
   AdminMetrics,
   CompanyRecord,
   CompanyStatus,
   CompanySummary,
-  ExampleDashboardSnapshot,
   SessionUser,
+  TenantWorkspaceMetrics,
   UserInviteRecord,
   UserRole,
   UserSummary
@@ -33,6 +34,20 @@ const baseUserColumns = [
   "company_id",
   "invite_status",
   "last_login_at",
+  "created_at",
+  "updated_at"
+];
+
+const baseAccessRequestColumns = [
+  "id",
+  "company_id",
+  "full_name",
+  "email",
+  "requested_role",
+  "team_name",
+  "use_case",
+  "notes",
+  "status",
   "created_at",
   "updated_at"
 ];
@@ -77,9 +92,9 @@ export const listCompaniesWithSummary = async () =>
         "c.updated_at"
       )
       .count<{ user_count: string }>("u.id as user_count")
-      .sum<{ invited_user_count: string }>(
-        db.raw("case when u.invite_status = 'pending' then 1 else 0 end as invited_user_count")
-      )
+      .sum<{ invited_user_count: string }>({
+        invited_user_count: db.raw("case when u.invite_status = 'pending' then 1 else 0 end")
+      })
       .groupBy("c.id")
       .orderBy("c.created_at", "desc");
 
@@ -164,6 +179,67 @@ export const listUsersWithCompany = async () =>
       )
       .orderBy("u.created_at", "desc") as Promise<UserSummary[]>
   );
+
+export const listAccessRequests = async () =>
+  withDb(async (db) =>
+    db("access_requests as ar")
+      .join("companies as c", "c.id", "ar.company_id")
+      .select(
+        "ar.id",
+        "ar.company_id",
+        "ar.full_name",
+        "ar.email",
+        "ar.requested_role",
+        "ar.team_name",
+        "ar.use_case",
+        "ar.notes",
+        "ar.status",
+        "ar.created_at",
+        "ar.updated_at",
+        "c.name as company_name",
+        "c.slug as company_slug"
+      )
+      .orderBy("ar.created_at", "desc") as Promise<AccessRequestSummary[]>
+  );
+
+export const findOpenAccessRequestByEmail = async (companyId: number, email: string) =>
+  withDb(async (db) =>
+    (await db("access_requests")
+      .select(baseAccessRequestColumns)
+      .where({
+        company_id: companyId
+      })
+      .whereRaw("lower(email) = ?", [email.toLowerCase()])
+      .whereIn("status", ["new", "reviewing", "invited"])
+      .orderBy("created_at", "desc")
+      .first()) ?? null
+  );
+
+export const createAccessRequest = async (input: {
+  companyId: number;
+  fullName: string;
+  email: string;
+  requestedRole: Exclude<UserRole, "platform_admin">;
+  teamName?: string | null;
+  useCase: string;
+  notes?: string | null;
+}) =>
+  withDb(async (db) => {
+    const [row] = await db("access_requests")
+      .insert({
+        company_id: input.companyId,
+        full_name: input.fullName,
+        email: input.email.toLowerCase(),
+        requested_role: input.requestedRole,
+        team_name: input.teamName ?? null,
+        use_case: input.useCase,
+        notes: input.notes ?? null,
+        status: "new"
+      })
+      .returning(baseAccessRequestColumns);
+
+    return row;
+  });
 
 export const findUserByEmail = async (email: string) =>
   withDb(async (db) =>
@@ -332,22 +408,28 @@ export const acceptInvite = async (input: {
 
 export const getAdminMetrics = async (): Promise<AdminMetrics> =>
   withDb(async (db) => {
-    const [rawCompanyTotals, rawUserTotals, rawRecentLogins, rawUsersPerCompany] =
+    const [
+      rawCompanyTotals,
+      rawUserTotals,
+      rawRecentLogins,
+      rawUsersPerCompany,
+      rawOpenAccessRequests
+    ] =
       await Promise.all([
       db("companies")
         .count<{ count: string }>("id as count")
-        .sum<{ active_count: string }>(
-          db.raw("case when status = 'active' then 1 else 0 end as active_count")
-        )
+        .sum<{ active_count: string }>({
+          active_count: db.raw("case when status = 'active' then 1 else 0 end")
+        })
         .first(),
       db("users")
         .count<{ count: string }>("id as count")
-        .sum<{ invited_count: string }>(
-          db.raw("case when invite_status = 'pending' then 1 else 0 end as invited_count")
-        )
-        .sum<{ active_count: string }>(
-          db.raw("case when invite_status = 'active' then 1 else 0 end as active_count")
-        )
+        .sum<{ invited_count: string }>({
+          invited_count: db.raw("case when invite_status = 'pending' then 1 else 0 end")
+        })
+        .sum<{ active_count: string }>({
+          active_count: db.raw("case when invite_status = 'active' then 1 else 0 end")
+        })
         .first(),
       db("users")
         .count<{ count: string }>("id as count")
@@ -358,7 +440,11 @@ export const getAdminMetrics = async (): Promise<AdminMetrics> =>
         .select("c.id as companyId", "c.name as companyName")
         .count<{ userCount: string }>("u.id as userCount")
         .groupBy("c.id")
-        .orderBy("c.name", "asc")
+        .orderBy("c.name", "asc"),
+      db("access_requests")
+        .count<{ count: string }>("id as count")
+        .whereIn("status", ["new", "reviewing", "invited"])
+        .first()
       ]);
 
     const companyTotals = rawCompanyTotals as unknown as
@@ -374,6 +460,9 @@ export const getAdminMetrics = async (): Promise<AdminMetrics> =>
     const recentLogins = rawRecentLogins as unknown as
       | { count?: string | number }
       | undefined;
+    const openAccessRequests = rawOpenAccessRequests as unknown as
+      | { count?: string | number }
+      | undefined;
     const usersPerCompany = rawUsersPerCompany as unknown as Array<{
       companyId: string | number;
       companyName: string;
@@ -387,6 +476,7 @@ export const getAdminMetrics = async (): Promise<AdminMetrics> =>
       invitedUsers: Number(userTotals?.invited_count || 0),
       activeUsers: Number(userTotals?.active_count || 0),
       recentLogins: Number(recentLogins?.count || 0),
+      openAccessRequests: Number(openAccessRequests?.count || 0),
       usersPerCompany: usersPerCompany.map((row) => ({
         companyId: Number(row.companyId),
         companyName: String(row.companyName),
@@ -449,13 +539,17 @@ export const buildSessionUser = async (userId: number): Promise<SessionUser | nu
     };
   });
 
-export const getExampleDashboardSnapshot = async (
+export const getTenantWorkspaceMetrics = async (
   company: CompanyRecord,
   session: SessionUser
-): Promise<ExampleDashboardSnapshot> =>
+): Promise<TenantWorkspaceMetrics> =>
   withDb(async (db) => {
-    const [memberCount, pendingInvites, recentImpersonations] = await Promise.all([
-      db("users").count<{ count: string }>("id as count").where({ company_id: company.id }).first(),
+    const [memberCount, pendingInvites, recentImpersonations, accessRequests] =
+      await Promise.all([
+      db("users")
+        .count<{ count: string }>("id as count")
+        .where({ company_id: company.id })
+        .first(),
       db("users")
         .count<{ count: string }>("id as count")
         .where({ company_id: company.id, invite_status: "pending" })
@@ -464,45 +558,23 @@ export const getExampleDashboardSnapshot = async (
         .count<{ count: string }>("id as count")
         .where({ company_id: company.id })
         .whereRaw("started_at >= now() - interval '30 days'")
+        .first(),
+      db("access_requests")
+        .count<{ count: string }>("id as count")
+        .where({ company_id: company.id })
+        .whereIn("status", ["new", "reviewing", "invited"])
         .first()
     ]);
 
+    const isViewerKnown = Boolean(session.fullName || session.email);
+    if (!isViewerKnown) {
+      throw new Error("Unable to resolve the current tenant session.");
+    }
+
     return {
-      headline: `${company.name} workspace`,
-      subheadline: `Custom AI operations for ${session.fullName || session.email}.`,
-      primaryStats: [
-        {
-          label: "Active members",
-          value: `${Number(memberCount?.count || 0)}`,
-          tone: "accent"
-        },
-        {
-          label: "Pending invites",
-          value: `${Number(pendingInvites?.count || 0)}`,
-          tone: Number(pendingInvites?.count || 0) > 0 ? "warning" : "neutral"
-        },
-        {
-          label: "Admin handoffs",
-          value: `${Number(recentImpersonations?.count || 0)}`,
-          tone: "neutral"
-        }
-      ],
-      workstreams: [
-        {
-          title: "Lead intake",
-          body: "Capture inbound company requests and route them into the tenant CRM workflow.",
-          meta: "Pipeline automation"
-        },
-        {
-          title: "AI operating copilots",
-          body: "Surface tenant-specific playbooks, approvals, and exception handling in one place.",
-          meta: "Decision support"
-        },
-        {
-          title: "Client reporting",
-          body: "Track health metrics, onboarding progress, and weekly outcomes by company.",
-          meta: "Executive visibility"
-        }
-      ]
+      activeMembers: Number(memberCount?.count || 0),
+      pendingInvites: Number(pendingInvites?.count || 0),
+      adminHandoffs: Number(recentImpersonations?.count || 0),
+      openAccessRequests: Number(accessRequests?.count || 0)
     };
   });

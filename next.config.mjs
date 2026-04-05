@@ -19,6 +19,9 @@ const getSecurityHeaders = () => {
 const nextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
   output: "standalone",
+  experimental: {
+    serverComponentsExternalPackages: ["knex", "pg"]
+  },
   images: {
     remotePatterns: []
   },

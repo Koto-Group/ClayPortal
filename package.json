@@ -8,7 +8,7 @@
     "prebuild": "node scripts/check-runtime.js && rm -rf .next .next-build .next-dev",
     "build": "NEXT_DIST_DIR=.next-build next build",
     "prestart": "node scripts/check-runtime.js",
-    "start": "NEXT_DIST_DIR=.next-build next start -p ${PORT:-3000}",
+    "start": "node .next-build/standalone/server.js",
     "lint": "next lint",
     "test": "jest --passWithNoTests",
     "db:migrate": "knex migrate:latest",
